@@ -5,19 +5,18 @@ module register_file (
     input wire rst,
     input wire rdy,
 
-    //port with dispatcher:
+    //port with dispatcher
     input wire [`REG_POS_TYPE] rs1_from_dispatcher,
     input wire [`REG_POS_TYPE] rs2_from_dispatcher,
+    input wire alloc_signal_from_dispatcher,
+    input wire [`REG_POS_TYPE] rd_from_dispatcher,
+    input wire [`ROB_ID_TYPE] rob_id_for_rd_from_dispatcher,
     output wire [`DATA_TYPE] V1_to_dispatcher,
     output wire [`DATA_TYPE] V2_to_dispatcher,
     output wire [`ROB_ID_TYPE] Q1_to_dispatcher,
     output wire [`ROB_ID_TYPE] Q2_to_dispatcher,
 
-    input wire alloc_signal_from_dispatcher,
-    input wire [`REG_POS_TYPE] rd_from_dispatcher,
-    input wire [`ROB_ID_TYPE] rob_id_for_rd_from_dispatcher,
-
-    //update from rob commit:
+    //port with ROB:
     input wire input_commit_flag,
     input wire rollback_flag,
     input wire [`REG_POS_TYPE] rd_from_ROB,
@@ -25,31 +24,41 @@ module register_file (
     input wire [`DATA_TYPE] V_from_ROB
 );
 
+
 reg [`ROB_ID_TYPE] Q [`REG_SIZE - 1 : 0];
 reg [`DATA_TYPE] V [`REG_SIZE - 1 : 0];
+
 
 reg output_jump_flag_from_ROB, output_commit_Q_elim; 
 reg [`ROB_ID_TYPE] output_rob_id_for_rd_from_dispatcher;
 reg [`REG_POS_TYPE] output_rd_from_dispatcher, output_rd_from_ROB;
 reg [`DATA_TYPE] output_V_from_ROB;
 
-assign Q1_to_dispatcher = (output_rd_from_ROB == rs1_from_dispatcher && output_commit_Q_elim) ? `ZERO_ROB : 
-                   (output_rd_from_dispatcher == rs1_from_dispatcher ? output_rob_id_for_rd_from_dispatcher : 
-                   (output_jump_flag_from_ROB ? `ZERO_ROB : Q[rs1_from_dispatcher]));
-assign Q2_to_dispatcher = (output_rd_from_ROB == rs2_from_dispatcher && output_commit_Q_elim) ? `ZERO_ROB : 
-                   (output_rd_from_dispatcher == rs2_from_dispatcher ? output_rob_id_for_rd_from_dispatcher : 
-                   (output_jump_flag_from_ROB ? `ZERO_ROB : Q[rs2_from_dispatcher]));
-assign V1_to_dispatcher = (output_rd_from_ROB == rs1_from_dispatcher) ? output_V_from_ROB : V[rs1_from_dispatcher];
-assign V2_to_dispatcher = (output_rd_from_ROB == rs2_from_dispatcher) ? output_V_from_ROB : V[rs2_from_dispatcher];
+assign Q1_to_dispatcher = 
+(output_rd_from_ROB == rs1_from_dispatcher && output_commit_Q_elim) ? 
+`ZERO_ROB : (output_rd_from_dispatcher == rs1_from_dispatcher ? 
+output_rob_id_for_rd_from_dispatcher : (output_jump_flag_from_ROB ? 
+`ZERO_ROB : Q[rs1_from_dispatcher]));
+
+assign Q2_to_dispatcher =
+(output_rd_from_ROB == rs2_from_dispatcher && output_commit_Q_elim) ? 
+`ZERO_ROB : (output_rd_from_dispatcher == rs2_from_dispatcher ? 
+output_rob_id_for_rd_from_dispatcher : (output_jump_flag_from_ROB ? 
+`ZERO_ROB : Q[rs2_from_dispatcher]));
+
+assign V1_to_dispatcher = 
+(output_rd_from_ROB == rs1_from_dispatcher) ? 
+output_V_from_ROB : V[rs1_from_dispatcher];
+assign V2_to_dispatcher = 
+(output_rd_from_ROB == rs2_from_dispatcher) ? 
+output_V_from_ROB : V[rs2_from_dispatcher];
 
 integer i;
 
 always @(*) begin
     output_jump_flag_from_ROB = `FALSE;
-
     output_rd_from_dispatcher = `ZERO_REG;
     output_rob_id_for_rd_from_dispatcher = `ZERO_ROB;
-
     output_rd_from_ROB = `ZERO_REG;
     output_commit_Q_elim = `FALSE;
     output_V_from_ROB = `ZERO_WORD;
@@ -80,7 +89,15 @@ always @(posedge clk) begin
             V[i] <= `ZERO_WORD;
         end
     end
+    else if(!rdy) begin
+    end
     else begin
+        //
+        if (output_rd_from_ROB != `ZERO_REG) begin
+            V[output_rd_from_ROB] <= output_V_from_ROB;
+            if (output_commit_Q_elim) Q[output_rd_from_ROB] <= `ZERO_ROB;
+        end
+        //misbranch: clear all rob id:
         if (output_jump_flag_from_ROB) begin
             for (i = 0; i < `REG_SIZE; i=i+1) begin
                 Q[i] <= `ZERO_ROB;
@@ -88,11 +105,6 @@ always @(posedge clk) begin
         end
         else if (output_rd_from_dispatcher != `ZERO_REG) begin
             Q[output_rd_from_dispatcher] <= output_rob_id_for_rd_from_dispatcher;
-        end
-
-        if (output_rd_from_ROB != `ZERO_REG) begin
-            V[output_rd_from_ROB] <= output_V_from_ROB;
-            if (output_commit_Q_elim) Q[output_rd_from_ROB] <= `ZERO_ROB;
         end
     end
 end   
